@@ -14,9 +14,8 @@ def kv_get(key):
         return None
     return resp.json().get("result")
 
-# ---------- Telegram API Sender ----------
+# ---------- Telegram API sender (no external libs) ----------
 def send_photo(token, chat_id, photo_url, caption=None, reply_markup=None):
-    """Telegram bot ko photo bhejne ka simple function."""
     payload = {
         "chat_id": chat_id,
         "photo": photo_url,
@@ -30,7 +29,6 @@ def send_photo(token, chat_id, photo_url, caption=None, reply_markup=None):
     return req.post(url, json=payload, timeout=10)
 
 def send_message(token, chat_id, text, reply_markup=None):
-    """Simple text message with optional inline keyboard."""
     payload = {
         "chat_id": chat_id,
         "text": text,
@@ -41,9 +39,8 @@ def send_message(token, chat_id, text, reply_markup=None):
     url = f"https://api.telegram.org/bot{token}/sendMessage"
     return req.post(url, json=payload, timeout=10)
 
-# ---------- Webhook Handler ----------
+# ---------- Core Logic ----------
 def handle_update(token, data):
-    """Process a single Telegram update for a specific bot token."""
     msg = data.get("message", {})
     chat_id = msg.get("chat", {}).get("id")
     text = (msg.get("text") or "").strip()
@@ -52,14 +49,12 @@ def handle_update(token, data):
         config_json = kv_get(f"config:{token}")
         if config_json:
             config = json.loads(config_json)
-
-            # 1. Photo bhejo agar URL hai
+            # Photo (if exists)
             if config.get("photo_url"):
                 send_photo(token, chat_id,
                            photo_url=config["photo_url"],
                            caption=config.get("caption", ""))
-
-            # 2. Second message with Launch button
+            # Second message with button
             button_text = config.get("button_text", "🎮 Launch Game")
             button_url = config.get("button_url", "https://cryptomines.vercel.app")
             second_msg = config.get("second_message", "🌟 Ready to Start? 🌟")
@@ -70,22 +65,36 @@ def handle_update(token, data):
             }
             send_message(token, chat_id, second_msg, reply_markup=keyboard)
         else:
-            # Fallback agar config nahi hai
             send_message(token, chat_id, "Welcome! Setup via Master Bot.")
 
-# ---------- FLASK APP ----------
+# ---------- Flask App with Catch‑All Route ----------
 app = Flask(__name__)
 
-@app.route("/api/health", methods=["GET"])
-def health():
-    return "Runner alive", 200
+# Catch‑all: har path yahan aayega, hum decide karenge
+@app.route("/", defaults={"path": ""})
+@app.route("/<path:path>")
+def catch_all(path):
+    # Vercel request ka full path (e.g., /api/health, /api/<token>, ya seedha health, <token>)
+    full_path = "/" + path
+    # Health check (chahe /api/health aaye ya /health)
+    if full_path.endswith("/api/health") or full_path.endswith("/health") or path == "health":
+        return "Runner alive", 200
 
-@app.route("/api/<token>", methods=["POST"])
-def webhook(token):
-    data = request.get_json()
-    if data:
-        handle_update(token, data)
-    return jsonify({"ok": True})
+    # Webhook: agar path kuch is tarah se aaye /api/<token>, /<token>
+    # Token nikaalne ki trick: path ke aakhri segment ko le lenge jo ':' contain kare
+    parts = full_path.strip("/").split("/")
+    token = None
+    for part in parts:
+        if ":" in part and len(part) > 20:   # Telegram token pattern
+            token = part
+            break
+
+    if request.method == "POST" and token:
+        data = request.get_json()
+        if data:
+            handle_update(token, data)
+            return jsonify({"ok": True})
+    return "Not Found", 404
 
 def handler(request):
     return app(request.environ, start_response)
