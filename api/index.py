@@ -38,11 +38,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 app = Flask(__name__)
 
-@app.route("/health", methods=["GET"])
+@app.route("/api/health", methods=["GET"])
 def health():
     return "Runner alive", 200
 
-@app.route("/<token>", methods=["POST"])
+@app.route("/api/<token>", methods=["POST"])
 def webhook(token):
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
@@ -56,7 +56,6 @@ def webhook(token):
         loop.run_until_complete(application.shutdown())
         return jsonify({"ok": True})
     except Exception as e:
-        print(f"Webhook error: {e}")
         return jsonify({"error": str(e)}), 500
     finally:
         loop.close()
