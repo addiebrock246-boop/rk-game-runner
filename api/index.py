@@ -3,9 +3,11 @@ from flask import Flask, request, jsonify
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from telegram.ext import Application, CommandHandler, ContextTypes
 
+# ---------- ENVIRONMENT VARIABLES ----------
 UPSTASH_URL = os.environ.get("UPSTASH_REDIS_REST_URL", "https://welcomed-flounder-86019.upstash.io")
 UPSTASH_TOKEN = os.environ.get("UPSTASH_REDIS_REST_TOKEN", "gQAAAAAAAVADAAIgcDE3ZmI1NTk4N2VmMTM0ZTExOWJiNDk5NTNmNjRkMWM1Yg")
 
+# ---------- KV Helpers ----------
 def kv_get(key):
     url = f"{UPSTASH_URL}/get/{key}"
     headers = {"Authorization": f"Bearer {UPSTASH_TOKEN}"}
@@ -14,6 +16,7 @@ def kv_get(key):
         return None
     return resp.json().get("result")
 
+# ---------- /start HANDLER ----------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     token = context.bot.token
     config_json = kv_get(f"config:{token}")
@@ -36,6 +39,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("Welcome! Setup via Master Bot.")
 
+# ---------- FLASK APP ----------
 app = Flask(__name__)
 
 @app.route("/api/health", methods=["GET"])
