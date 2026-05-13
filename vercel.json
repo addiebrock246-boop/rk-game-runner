@@ -1,0 +1,7 @@
+{
+  "functions": {
+    "index.py": {
+      "memory": 128
+    }
+  }
+}
