@@ -38,11 +38,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 app = Flask(__name__)
 
-@app.route("/api/health", methods=["GET"])
+# ✅ Ab /api/health hi call hoga
+@app.route("/health", methods=["GET"])
 def health():
     return "Runner alive", 200
 
-@app.route("/api/<token>", methods=["POST"])
+# ✅ /api/<token> hi call hoga
+@app.route("/<token>", methods=["POST"])
 def webhook(token):
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
