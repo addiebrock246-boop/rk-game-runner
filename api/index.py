@@ -38,12 +38,28 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 app = Flask(__name__)
 
-@app.route("/api/health", methods=["GET"])
-def health():
-    return "Runner alive", 200
+# Catch‑all route jo har request ko handle karega
+@app.route("/", defaults={"path": ""})
+@app.route("/<path:path>")
+def handle_request(path):
+    # Vercel hame /api/health ya /api/<token> bhejega
+    # Path = "health" ya "<token>" ya kuch aur
+    # Agar path "health" hai to health check, warna webhook maan lenge
+    if path == "health":
+        return "Runner alive", 200
+    if request.method == "POST" and path.startswith("api/"):
+        # Remove api/ prefix to get token
+        token = path[4:]  # e.g., path = "api/7129346547:..."
+        return process_webhook(token)
+    # Fallback: agar path "api/health" aata hai to
+    if path == "api/health":
+        return "Runner alive", 200
+    if request.method == "POST" and path and path != "health":
+        # Direct token (Vercel ne /api prefix nahi bheja to)
+        return process_webhook(path)
+    return "Not Found", 404
 
-@app.route("/api/<token>", methods=["POST"])
-def webhook(token):
+def process_webhook(token):
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:
@@ -56,6 +72,7 @@ def webhook(token):
         loop.run_until_complete(application.shutdown())
         return jsonify({"ok": True})
     except Exception as e:
+        print(f"Webhook error: {e}")
         return jsonify({"error": str(e)}), 500
     finally:
         loop.close()
