@@ -1,7 +1,5 @@
-import os, json, requests as req, asyncio
+import os, json, requests as req
 from flask import Flask, request, jsonify
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
-from telegram.ext import Application, CommandHandler, ContextTypes
 
 # ---------- ENVIRONMENT VARIABLES ----------
 UPSTASH_URL = os.environ.get("UPSTASH_REDIS_REST_URL", "https://welcomed-flounder-86019.upstash.io")
@@ -16,28 +14,64 @@ def kv_get(key):
         return None
     return resp.json().get("result")
 
-# ---------- /start HANDLER ----------
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    token = context.bot.token
-    config_json = kv_get(f"config:{token}")
-    if config_json:
-        config = json.loads(config_json)
-        if config.get("photo_url"):
-            await context.bot.send_photo(
-                chat_id=update.effective_chat.id,
-                photo=config["photo_url"],
-                caption=config.get("caption", ""),
-                parse_mode="Markdown"
-            )
-        second_msg = config.get("second_message", "🌟 Ready to Start? 🌟")
-        button_text = config.get("button_text", "🎮 Launch Game")
-        button_url = config.get("button_url", "https://cryptomines.vercel.app")
-        keyboard = InlineKeyboardMarkup([[
-            InlineKeyboardButton(button_text, web_app=WebAppInfo(url=button_url))
-        ]])
-        await update.message.reply_text(second_msg, reply_markup=keyboard)
-    else:
-        await update.message.reply_text("Welcome! Setup via Master Bot.")
+# ---------- Telegram API Sender ----------
+def send_photo(token, chat_id, photo_url, caption=None, reply_markup=None):
+    """Telegram bot ko photo bhejne ka simple function."""
+    payload = {
+        "chat_id": chat_id,
+        "photo": photo_url,
+        "parse_mode": "Markdown"
+    }
+    if caption:
+        payload["caption"] = caption
+    if reply_markup:
+        payload["reply_markup"] = json.dumps(reply_markup)
+    url = f"https://api.telegram.org/bot{token}/sendPhoto"
+    return req.post(url, json=payload, timeout=10)
+
+def send_message(token, chat_id, text, reply_markup=None):
+    """Simple text message with optional inline keyboard."""
+    payload = {
+        "chat_id": chat_id,
+        "text": text,
+        "parse_mode": "Markdown"
+    }
+    if reply_markup:
+        payload["reply_markup"] = json.dumps(reply_markup)
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    return req.post(url, json=payload, timeout=10)
+
+# ---------- Webhook Handler ----------
+def handle_update(token, data):
+    """Process a single Telegram update for a specific bot token."""
+    msg = data.get("message", {})
+    chat_id = msg.get("chat", {}).get("id")
+    text = (msg.get("text") or "").strip()
+
+    if text == "/start" and chat_id:
+        config_json = kv_get(f"config:{token}")
+        if config_json:
+            config = json.loads(config_json)
+
+            # 1. Photo bhejo agar URL hai
+            if config.get("photo_url"):
+                send_photo(token, chat_id,
+                           photo_url=config["photo_url"],
+                           caption=config.get("caption", ""))
+
+            # 2. Second message with Launch button
+            button_text = config.get("button_text", "🎮 Launch Game")
+            button_url = config.get("button_url", "https://cryptomines.vercel.app")
+            second_msg = config.get("second_message", "🌟 Ready to Start? 🌟")
+            keyboard = {
+                "inline_keyboard": [[
+                    {"text": button_text, "web_app": {"url": button_url}}
+                ]]
+            }
+            send_message(token, chat_id, second_msg, reply_markup=keyboard)
+        else:
+            # Fallback agar config nahi hai
+            send_message(token, chat_id, "Welcome! Setup via Master Bot.")
 
 # ---------- FLASK APP ----------
 app = Flask(__name__)
@@ -48,22 +82,10 @@ def health():
 
 @app.route("/api/<token>", methods=["POST"])
 def webhook(token):
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    try:
-        data = request.get_json()
-        application = Application.builder().token(token).build()
-        application.add_handler(CommandHandler("start", start))
-        loop.run_until_complete(application.initialize())
-        update = Update.de_json(data, application.bot)
-        loop.run_until_complete(application.process_update(update))
-        loop.run_until_complete(application.shutdown())
-        return jsonify({"ok": True})
-    except Exception as e:
-        print(f"Webhook error: {e}")
-        return jsonify({"error": str(e)}), 500
-    finally:
-        loop.close()
+    data = request.get_json()
+    if data:
+        handle_update(token, data)
+    return jsonify({"ok": True})
 
 def handler(request):
     return app(request.environ, start_response)
